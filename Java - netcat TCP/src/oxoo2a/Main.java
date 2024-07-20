@@ -31,6 +31,12 @@ public class Main {
     // Server
     // ************************************************************************
     private static Map<String, ClientHandler> clients = new HashMap<>();
+    private static Map<String, String> predefinedAnswers = new HashMap<>();
+
+    static {
+        predefinedAnswers.put("Was ist deine MAC-Adresse?", "Die MAC-Adresse ist geheim.");
+        predefinedAnswers.put("Sind Kartoffeln eine richtige Mahlzeit?", "Ja, Kartoffeln sind eine nahrhafte Mahlzeit.");
+    }
 
     private static void Server (int port) throws IOException {
         ServerSocket serverSocket = new ServerSocket(port);
@@ -77,6 +83,15 @@ public class Main {
                 String targetName = parts[1];
                 String msg = parts[2];
                 sendMessage(name, targetName, msg);
+            } else if (message.startsWith("broadcast ")) {
+                String msg = message.substring(10);
+                broadcastMessage(name, msg);
+            } else if (message.equalsIgnoreCase("list")) {
+                sendClientList(writer);
+            } else if (message.startsWith("query ")) {
+                String question = message.substring(6);
+                String answer = predefinedAnswers.getOrDefault(question, "Ich weiß es nicht.");
+                writer.println("RESPONSE: " + answer);
             } else if (message.equalsIgnoreCase("stop")) {
                 break;
             } else {
@@ -104,6 +119,24 @@ public class Main {
                 }
             }
         }
+    }
+
+    private static void broadcastMessage(String from, String message) {
+        synchronized (clients) {
+            for (ClientHandler handler : clients.values()) {
+                handler.sendMessage("From " + from + " (broadcast): " + message);
+            }
+        }
+    }
+
+    private static void sendClientList(PrintWriter writer) {
+        StringBuilder list = new StringBuilder("LIST_RESPONSE: ");
+        synchronized (clients) {
+            for (String client : clients.keySet()) {
+                list.append(client).append(" ");
+            }
+        }
+        writer.println(list.toString().trim());
     }
 
     // ************************************************************************
@@ -138,8 +171,7 @@ public class Main {
         BufferedReader consoleReader = new BufferedReader(new InputStreamReader(System.in));
 
         // Registration
-        String serverMessage = reader.readLine();
-        System.out.println(serverMessage);
+        System.out.println("Enter your name: ");
         String name = consoleReader.readLine();
         writer.println(name);
 

@@ -20,6 +20,12 @@ public class Main {
     private static String name;
     private static int port;
     private static Map<String, Contact> contacts = new HashMap<>();
+    private static Map<String, String> predefinedAnswers = new HashMap<>();
+
+    static {
+        predefinedAnswers.put("Was ist deine MAC-Adresse?", "Die MAC-Adresse ist geheim.");
+        predefinedAnswers.put("Sind Kartoffeln eine richtige Mahlzeit?", "Ja, Kartoffeln sind eine nahrhafte Mahlzeit.");
+    }
 
     public static void main(String[] args) throws IOException {
         if (args.length < 3) {
@@ -74,64 +80,94 @@ public class Main {
 
                 Contact contact = contacts.get(contactName);
                 if (contact == null) {
-                    System.out.println("No such contact: " + contactName);
+                    System.out.println("Unknown contact.");
                     continue;
                 }
-
-                buffer = message.getBytes("UTF-8");
-                DatagramPacket messagePacket = new DatagramPacket(buffer, buffer.length, contact.address, contact.port);
-                socket.send(messagePacket);
+                String sendMessage = "SEND: " + name + " " + contactName + " " + message;
+                buffer = sendMessage.getBytes("UTF-8");
+                DatagramPacket sendPacket = new DatagramPacket(buffer, buffer.length, contact.address, contact.port);
+                socket.send(sendPacket);
+            } else if (line.startsWith("broadcast")) {
+                String message = line.substring(10);
+                for (Contact contact : contacts.values()) {
+                    String sendMessage = "BROADCAST: " + name + " " + message;
+                    buffer = sendMessage.getBytes("UTF-8");
+                    DatagramPacket sendPacket = new DatagramPacket(buffer, buffer.length, contact.address, contact.port);
+                    socket.send(sendPacket);
+                }
+            } else if (line.equals("list")) {
+                listContacts();
+            } else if (line.startsWith("query")) {
+                String question = line.substring(6);
+                String answer = predefinedAnswers.getOrDefault(question, "Ich weiß es nicht.");
+                System.out.println("RESPONSE: " + answer);
+            } else if (line.equalsIgnoreCase("stop")) {
+                break;
+            } else {
+                System.out.println("Unknown command.");
             }
         }
+
+        socket.close();
     }
 
     private static void processReceivedMessage(String message, InetAddress address, int port) {
-        if (message.startsWith("REG:")) {
-            String[] parts = message.substring(4).split(" ");
-            if (parts.length != 3) {
-                System.out.println("Invalid registration message: " + message);
-                return;
+        if (message.startsWith("REG: ")) {
+            String[] parts = message.substring(5).split(" ");
+            if (parts.length == 3) {
+                String contactName = parts[0];
+                String contactIp = parts[1];
+                int contactPort = Integer.parseInt(parts[2]);
+                contacts.put(contactName, new Contact(contactName, contactIp, contactPort, address, port));
+                System.out.println(contactName + " has joined.");
             }
-            String contactName = parts[0];
-            String ipAddress = parts[1];
-            int contactPort = Integer.parseInt(parts[2]);
-
-            contacts.put(contactName, new Contact(contactName, ipAddress, contactPort, address));
-            System.out.println("Registered new contact: " + contactName + " at " + ipAddress + ":" + contactPort);
+        } else if (message.startsWith("SEND: ")) {
+            String[] parts = message.split(" ", 4);
+            if (parts.length == 4) {
+                String sender = parts[1];
+                String receiver = parts[2];
+                String msg = parts[3];
+                System.out.println("From " + sender + ": " + msg);
+            }
+        } else if (message.startsWith("BROADCAST: ")) {
+            String[] parts = message.split(" ", 3);
+            if (parts.length == 3) {
+                String sender = parts[1];
+                String msg = parts[2];
+                System.out.println("From " + sender + " (broadcast): " + msg);
+            }
+        } else if (message.startsWith("LIST: ")) {
+            listContacts();
         } else {
-            System.out.println("Received message: " + message);
+            System.out.println("Unknown message: " + message);
         }
     }
 
-    private static String readString() {
-        BufferedReader br = null;
-        boolean again = false;
-        String input = null;
-        do {
-            try {
-                if (br == null) {
-                    br = new BufferedReader(new InputStreamReader(System.in));
-                }
-                input = br.readLine();
-            } catch (Exception e) {
-                System.out.printf("Exception: %s\n", e.getMessage());
-                again = true;
-            }
-        } while (again);
-        return input;
+    private static void listContacts() {
+        System.out.println("Known contacts:");
+        for (String contactName : contacts.keySet()) {
+            System.out.println(contactName);
+        }
     }
 
-    static class Contact {
+    private static String readString() throws IOException {
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        return br.readLine();
+    }
+
+    private static class Contact {
         String name;
-        String ipAddress;
+        String ip;
         int port;
         InetAddress address;
+        int originalPort;
 
-        Contact(String name, String ipAddress, int port, InetAddress address) {
+        Contact(String name, String ip, int port, InetAddress address, int originalPort) {
             this.name = name;
-            this.ipAddress = ipAddress;
+            this.ip = ip;
             this.port = port;
             this.address = address;
+            this.originalPort = originalPort;
         }
     }
 }
